@@ -199,6 +199,7 @@ func main() {
 		die(stdinErr)
 	}
 	var err error
+	var errCount int
 	for _, arg := range flag.Args() {
 		parts := strings.SplitN(arg, "@", 2)
 		openid := parts[0]
@@ -234,8 +235,10 @@ func main() {
 		}
 		if err != nil {
 			log.Println(openid, err)
+			errCount++
 		} else {
 			log.Println(openid, "ok")
 		}
 	}
+	os.Exit(errCount)
 }

@@ -19,9 +19,6 @@ import (
 const WECHAT_HOST = "https://api.weixin.qq.com/cgi-bin"
 const TEMPLATEID = "u7WqGbcn5PBiFVFT6iba8ULsaRwYG2NKmulZ1NYvuEc"
 
-const APPID = "someappid"
-const SECRET = "somesecret"
-
 type Message interface {
 	getType() string
 }

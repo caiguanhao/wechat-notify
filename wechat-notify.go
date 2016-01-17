@@ -3,21 +3,25 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
+	"unsafe"
 )
 
 const WECHAT_HOST = "https://api.weixin.qq.com/cgi-bin"
 const TEMPLATEID = "u7WqGbcn5PBiFVFT6iba8ULsaRwYG2NKmulZ1NYvuEc"
+const AUTO_URL_PREFIX = "https://dn-gaiamagic.qbox.me/auto-url.html"
 const DESC_MAX_LENGTH = 200 // wechat's restriction
 
 type Message interface {
@@ -162,42 +166,65 @@ func parse(input []byte) *Input {
 	return &ret
 }
 
-func die(err interface{}) {
-	log.Println(err)
-	os.Exit(1)
+// https://github.com/golang/crypto/blob/master/ssh/terminal/util.go
+func isTerminal(fd int) bool {
+	var termios syscall.Termios
+	_, _, err := syscall.Syscall6(syscall.SYS_IOCTL, uintptr(fd), ioctlReadTermios, uintptr(unsafe.Pointer(&termios)), 0, 0, 0)
+	return err == 0
+}
+
+func autoUrl(input string) (output string) {
+	output = AUTO_URL_PREFIX + "#" + base64.StdEncoding.EncodeToString([]byte(input))
+	return
 }
 
 var sendRaw bool
+var noAutoUrl bool
+var ioctlReadTermios uintptr
 
 func init() {
+	if runtime.GOOS == "darwin" {
+		ioctlReadTermios = 0x40487413
+	} else {
+		ioctlReadTermios = 0x5401
+	}
+
 	flag.BoolVar(&sendRaw, "raw", false, "")
+	flag.BoolVar(&noAutoUrl, "no-auto-url", false, "")
 	flag.Usage = func() {
-		fmt.Println("USAGE: wechat-notify [--raw] [USER-OPENID] ...")
+		fmt.Println("USAGE: wechat-notify [OPTION] [USER-OPENID] ...")
 		fmt.Println()
-		fmt.Println("This program will send templated message to specified users.")
-		fmt.Println("Provide --raw to just send un-templated message, otherwise")
-		fmt.Println("you need to provide template data like this via STDIN:")
-		fmt.Println()
-		fmt.Println("timestamp: 1452504535")
-		fmt.Println("service:   some-service")
-		fmt.Println("event:     some-event")
-		fmt.Println("action:    some-action")
-		fmt.Println("host:      some-host")
-		fmt.Println("")
-		fmt.Println("you can type your multi-line message here...")
-		fmt.Println("")
+		fmt.Println("Send templated message to specified WeChat users.")
 		fmt.Println("For more info, visit https://github.com/caiguanhao/wechat-notify")
+		fmt.Println()
+		fmt.Println("Option:")
+		fmt.Println("    --raw           send un-templated message")
+		fmt.Println("    --no-auto-url   don't generate URL when URL is empty and message is too long")
+		fmt.Println()
+		fmt.Println("Template Format:")
+		fmt.Println("    timestamp: 1452504535")
+		fmt.Println("    service:   some-service")
+		fmt.Println("    event:     some-event")
+		fmt.Println("    action:    some-action")
+		fmt.Println("    host:      some-host")
+		fmt.Println()
+		fmt.Println("    you can type your multi-line message here...")
 	}
 	flag.Parse()
 }
 
 func main() {
 	if flag.NArg() == 0 {
-		die("Please provide at least one OPENID.")
+		fmt.Fprintln(os.Stderr, "Please provide at least one OPENID.")
+		os.Exit(1)
+	}
+	if isTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprintln(os.Stderr, "Paste your message and press CTRL-D to send. See --help for template format.")
 	}
 	stdin, stdinErr := ioutil.ReadAll(os.Stdin)
 	if stdinErr != nil {
-		die(stdinErr)
+		fmt.Fprintln(os.Stderr, stdinErr)
+		os.Exit(1)
 	}
 	var err error
 	var errCount int
@@ -223,6 +250,9 @@ func main() {
 			description := input.Description
 			infoLen := len(datetime) + len(input.Host) + len(input.Action)
 			if len(description)+infoLen > DESC_MAX_LENGTH {
+				if noAutoUrl == false && msg.URL == "" {
+					msg.URL = autoUrl(description)
+				}
 				description = description[0:DESC_MAX_LENGTH-infoLen-3] + "..."
 			}
 			msg.Data = struct {
@@ -240,10 +270,10 @@ func main() {
 			err = send(msg)
 		}
 		if err != nil {
-			log.Println(openid, err)
+			fmt.Fprintln(os.Stderr, openid, err)
 			errCount++
 		} else {
-			log.Println(openid, "ok")
+			fmt.Println(openid, "ok")
 		}
 	}
 	os.Exit(errCount)

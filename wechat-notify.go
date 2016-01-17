@@ -18,6 +18,7 @@ import (
 
 const WECHAT_HOST = "https://api.weixin.qq.com/cgi-bin"
 const TEMPLATEID = "u7WqGbcn5PBiFVFT6iba8ULsaRwYG2NKmulZ1NYvuEc"
+const DESC_MAX_LENGTH = 200 // wechat's restriction
 
 type Message interface {
 	getType() string
@@ -219,6 +220,11 @@ func main() {
 			msg.ToUser = openid
 			msg.TemplateID = TEMPLATEID
 			msg.URL = input.URL
+			description := input.Description
+			infoLen := len(datetime) + len(input.Host) + len(input.Action)
+			if len(description)+infoLen > DESC_MAX_LENGTH {
+				description = description[0:DESC_MAX_LENGTH-infoLen-3] + "..."
+			}
 			msg.Data = struct {
 				Description ValueColor `json:"first"`
 				DateTime    ValueColor `json:"time"`
@@ -226,7 +232,7 @@ func main() {
 				Type        ValueColor `json:"sec_type"`
 				Remark      ValueColor `json:"remark"`
 			}{
-				Description: ValueColor{input.Description, "#000"},
+				Description: ValueColor{description, "#000"},
 				DateTime:    ValueColor{datetime, "#000"},
 				Host:        ValueColor{input.Host, "#000"},
 				Type:        ValueColor{input.Action, "#000"},
